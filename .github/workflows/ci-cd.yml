@@ -1,0 +1,228 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/edupass-mg
+  REGISTRY: docker.io
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: edupass_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, pdo, pdo_pgsql, redis, zip, gd
+          coverage: none
+
+      - name: Copy .env
+        run: cp .env.example .env
+
+      - name: Install Composer Dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Generate Application Key
+        run: php artisan key:generate
+
+      - name: Run Migrations
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_DATABASE: edupass_test
+          DB_USERNAME: postgres
+          DB_PASSWORD: password
+        run: php artisan migrate --force
+
+      - name: Run Tests
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_DATABASE: edupass_test
+          DB_USERNAME: postgres
+          DB_PASSWORD: password
+        run: php artisan test
+
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Staging Server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: ${{ secrets.STAGING_PORT || 22 }}
+          script: |
+            cd /home/deploy/edupass-mg
+            
+            # Pull latest images
+            docker-compose -f docker-compose.prod.yml pull
+            
+            # Stop and remove old containers
+            docker-compose -f docker-compose.prod.yml down
+            
+            # Start new containers
+            docker-compose -f docker-compose.prod.yml up -d
+            
+            # Wait for services to be ready
+            sleep 10
+            
+            # Run migrations
+            docker-compose -f docker-compose.prod.yml exec -T app php artisan migrate --force
+            
+            # Clear and cache config
+            docker-compose -f docker-compose.prod.yml exec -T app php artisan config:cache
+            docker-compose -f docker-compose.prod.yml exec -T app php artisan route:cache
+            docker-compose -f docker-compose.prod.yml exec -T app php artisan view:cache
+            
+            # Restart queue workers
+            docker-compose -f docker-compose.prod.yml exec -T app php artisan queue:restart
+            
+            # Clean up old images
+            docker image prune -af
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment: 
+      name: production
+      url: https://edupass.mg
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Production Server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          port: ${{ secrets.PRODUCTION_PORT || 22 }}
+          script: |
+            cd /home/deploy/edupass-mg
+            
+            # Pull latest images
+            docker-compose -f docker-compose.prod.yml pull
+            
+            # Stop and remove old containers
+            docker-compose -f docker-compose.prod.yml down
+            
+            # Start new containers
+            docker-compose -f docker-compose.prod.yml up -d
+            
+            # Wait for services to be ready
+            sleep 15
+            
+            # Run migrations
+            docker-compose -f docker-compose.prod.yml exec -T app php artisan migrate --force
+            
+            # Clear and cache config
+            docker-compose -f docker-compose.prod.yml exec -T app php artisan config:cache
+            docker-compose -f docker-compose.prod.yml exec -T app php artisan route:cache
+            docker-compose -f docker-compose.prod.yml exec -T app php artisan view:cache
+            
+            # Restart queue workers
+            docker-compose -f docker-compose.prod.yml exec -T app php artisan queue:restart
+            
+            # Clean up old images
+            docker image prune -af
+            
+            # Health check
+            curl -f http://localhost:8080/health || exit 1
+
+      - name: Notify deployment success
+        if: success()
+        run: echo "✅ Production deployment successful!"
+
+      - name: Notify deployment failure
+        if: failure()
+        run: echo "❌ Production deployment failed!"

@@ -1,0 +1,50 @@
+services:
+  - type: web
+    name: edupass-mg
+    env: docker
+    dockerfilePath: Dockerfile.render
+    plan: free
+    region: frankfurt # Or your preferred region
+    healthCheckPath: /
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_URL
+        fromContext: git.url
+      - key: APP_KEY
+        sync: false # User must provide this in the dashboard
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DB_HOST
+        fromDatabase:
+          name: edupass-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: edupass-db
+          property: port
+      - key: DB_DATABASE
+        fromDatabase:
+          name: edupass-db
+          property: database
+      - key: DB_USERNAME
+        fromDatabase:
+          name: edupass-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: edupass-db
+          property: password
+      - key: QUEUE_CONNECTION
+        value: database
+      - key: CACHE_DRIVER
+        value: file
+      - key: SESSION_DRIVER
+        value: file
+
+databases:
+  - name: edupass-db
+    plan: free
+    region: frankfurt

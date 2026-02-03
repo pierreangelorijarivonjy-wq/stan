@@ -1,0 +1,65 @@
+# Docker ignore file for EduPass-MG
+
+# Laravel specific
+/vendor
+/node_modules
+/public/hot
+/public/storage
+/storage/*.key
+/storage/app/*
+!/storage/app/.gitignore
+/storage/framework/cache/*
+!/storage/framework/cache/.gitignore
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+/storage/logs/*
+!/storage/logs/.gitignore
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.phpunit.result.cache
+coverage
+
+# Build artifacts
+/public/build
+/public/css
+/public/js
+/public/mix-manifest.json
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+*.md
+!GUIDE_DEPLOIEMENT_CICD.md
+
+# CI/CD (not needed in image)
+.github
+deployment/*.sh
+
+# Composer
+composer.lock
+
+# NPM
+package-lock.json

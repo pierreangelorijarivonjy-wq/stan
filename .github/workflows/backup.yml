@@ -1,0 +1,65 @@
+name: Automated Backups
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC (5 AM Madagascar time)
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  backup-production:
+    name: Backup Production Database
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run backup on production server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          port: ${{ secrets.PRODUCTION_PORT || 22 }}
+          script: |
+            cd /home/deploy/edupass-mg/deployment
+            chmod +x backup.sh
+            ./backup.sh production
+
+      - name: Notify on success
+        if: success()
+        run: echo "✅ Production backup completed successfully"
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "❌ Production backup failed"
+
+  backup-staging:
+    name: Backup Staging Database
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run backup on staging server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: ${{ secrets.STAGING_PORT || 22 }}
+          script: |
+            cd /home/deploy/edupass-mg/deployment
+            chmod +x backup.sh
+            ./backup.sh staging
+
+      - name: Notify on success
+        if: success()
+        run: echo "✅ Staging backup completed successfully"
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "❌ Staging backup failed"
