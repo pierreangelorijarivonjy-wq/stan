@@ -1,0 +1,41 @@
+# Git and development
+.git
+.github
+tests
+phpunit.xml
+.phpunit.result.cache
+*.md
+Makefile
+Procfile
+railway.json
+render.yaml
+docker/
+docker-compose.yml
+docker-compose.prod.yml
+Dockerfile
+Dockerfile.render
+
+# Logs and temporary files
+storage/logs/*
+temp_log.txt
+temp_env.txt
+*.txt
+*.bak
+*.log
+
+# Dependencies (Vercel installs these during build)
+node_modules
+vendor/fakerphp
+vendor/mockery
+vendor/phpunit
+
+# Local files
+.env
+.editorconfig
+.dockerignore
+.gitattributes
+LANCER_INSTALLATION.bat
+
+# App specific exclusions
+storage/app/public/*
+public/storage
